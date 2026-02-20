@@ -22,6 +22,13 @@ export const WebSocketProvider = ({ children }) => {
     const [users, setUsers] = useState([])
     const [messages, setMessages] = useState([]);
     const [usersData, setUsersData] = useState({})
+    const [gameState, setGameState] = useState({
+        status: "waiting",
+        round: 1,
+        drawer: "",
+        currentWord: "",
+        isDrawer: false,
+    })
 
 
     const drawListeners = new Set();
@@ -74,6 +81,25 @@ export const WebSocketProvider = ({ children }) => {
                 console.log(messages)
             }
 
+            if (data.type === "game_state") {
+                setGameState({
+                    status: data.status ?? "waiting",
+                    round: data.round ?? 1,
+                    drawer: data.drawer ?? "",
+                    currentWord: data.word ?? "",
+                    isDrawer: Boolean(data.is_drawer),
+                })
+
+                setMessages((prev) => [
+                    ...prev,
+                    `Round ${data.round}: ${data.drawer} is drawing now.`,
+                ])
+            }
+
+            if (data.type === "game_error") {
+                setMessages((prev) => [...prev, `System: ${data.message}`])
+            }
+
             if (data.type === "draw") {
                 drawListeners.forEach((fn) => fn(data))
             }
@@ -83,6 +109,13 @@ export const WebSocketProvider = ({ children }) => {
             socketRef.current = null
             setUsers([])
             setMessages([])
+            setGameState({
+                status: "waiting",
+                round: 1,
+                drawer: "",
+                currentWord: "",
+                isDrawer: false,
+            })
         }
 
         socketRef.current = ws
@@ -133,11 +166,17 @@ export const WebSocketProvider = ({ children }) => {
         socketRef.current.send(JSON.stringify(payload))
     }
 
+    const startGame = () => {
+        if (!socketRef.current) return
+
+        socketRef.current.send(
+            JSON.stringify({
+                type: "start_game",
+            })
+        )
+    }
+
     useEffect(() => {
-        const savedUsername = localStorage.getItem("username")
-        const savedRoomId = localStorage.getItem("roomId")
-
-
         // if (savedUsername && savedRoomId) {
         //     console.log("Auto reconnecting with:", savedUsername, savedRoomId)
         //     const res =  connect(savedRoomId, savedUsername)
@@ -166,7 +205,10 @@ export const WebSocketProvider = ({ children }) => {
         registerDrawListeners,
         unRegisterDrawListeners,
         usersData,
-        setUsersData
+        setUsersData,
+        startGame,
+        gameState,
+        setGameState
 
 
     };

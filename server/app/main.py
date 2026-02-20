@@ -9,6 +9,10 @@ from app.models.CreateRoomModel import CreateRoomRequest
 import json
 
 
+def mask_word(word: str) -> str:
+    return " ".join("_" for _ in word)
+
+
 app = FastAPI()
 origins = [
     "http://localhost:5173",  # Vite
@@ -39,7 +43,7 @@ async def create_room(data: CreateRoomRequest):
 
     if not result["success"]:
         raise HTTPException(
-            status_code=400, detail="result.get"("message", "Room creation failed")
+            status_code=400, detail=result.get("message", "Room creation failed")
         )
 
     return result
@@ -94,6 +98,87 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, username: str):
 
             elif msg_type == "draw":
                 await connection_manager.broadcast(room_id, payload)
+
+            elif msg_type == "start_game":
+                room = room_manager.rooms.get(room_id)
+
+                if not room:
+                    await connection_manager.send_to_username(
+                        room_id,
+                        username,
+                        {
+                            "type": "game_error",
+                            "message": "Room does not exist",
+                        },
+                    )
+                    continue
+
+                if room_id not in game_manager.games:
+                    create_result = game_manager.create_game(
+                        room_id=room_id,
+                        players=list(room["users"]),
+                        owner=room["admin"],
+                    )
+                    if not create_result["success"]:
+                        await connection_manager.send_to_username(
+                            room_id,
+                            username,
+                            {
+                                "type": "game_error",
+                                "message": create_result["message"],
+                            },
+                        )
+                        continue
+
+                game = game_manager.games[room_id]
+                game["players"] = list(room["users"])
+                game["admin"] = room["admin"]
+
+                for player in game["players"]:
+                    game["scores"].setdefault(player, 0)
+
+                start_result = game_manager.start_game(room_id=room_id, requester=username)
+
+                if not start_result["success"]:
+                    await connection_manager.send_to_username(
+                        room_id,
+                        username,
+                        {
+                            "type": "game_error",
+                            "message": start_result["message"],
+                        },
+                    )
+                    continue
+
+                current_round = game_manager.games[room_id]["round"]
+                drawer = start_result["drawer"]
+                actual_word = start_result["word"]
+                hidden_word = mask_word(actual_word)
+
+                await connection_manager.broadcast(
+                    room_id,
+                    {
+                        "type": "game_state",
+                        "status": "playing",
+                        "round": current_round,
+                        "drawer": drawer,
+                        "word": hidden_word,
+                        "is_drawer": False,
+                    },
+                )
+
+                await connection_manager.send_to_username(
+                    room_id,
+                    drawer,
+                    {
+                        "type": "game_state",
+                        "status": "playing",
+                        "round": current_round,
+                        "drawer": drawer,
+                        "word": actual_word,
+                        "is_drawer": True,
+                    },
+                )
             
                            
 

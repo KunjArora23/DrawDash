@@ -94,7 +94,7 @@ class GameManager:
 
         if game["drawing_idx"] >= len(game["players"]):
             game["drawing_idx"] = 0
-            return self._next_round(room_id)
+            return self.next_round(room_id)
 
         return {
             "success": True,

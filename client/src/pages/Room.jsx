@@ -8,7 +8,7 @@ import ChatInput from "../components/Chat/ChatInput";
 import TopBar from "../components/Layout/TopBar";
 import CanvasBoard from "../components/Canvas/CanvasBoard";
 import VideoOverlay from "../components/Video/VideoOverlay";
-import CanvasToolbar from "../components/Canvas/CanvasToolBar";
+import CanvasToolbar from "../components/Canvas/CanvasToolbar";
 
 
 const Room = () => {
@@ -19,7 +19,6 @@ const Room = () => {
   const [showUsers, setShowUsers] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const timer = 60
-  const [currentWord, setCurrentWord] = useState("")
 
 
 
@@ -30,7 +29,9 @@ const Room = () => {
     leaveRoom,
     messages,
     sendChat,
-    usersData
+    usersData,
+    startGame,
+    gameState
   } = useWebSocket();
 
 
@@ -45,7 +46,7 @@ const Room = () => {
     console.log("Room Id in room file ", roomId, "username", username)
     connect(roomId, username)
 
-  }, []);
+  }, [username, navigate, roomId, connect]);
 
   const leaveRoomHandler = () => {
     // if(window.confirm("Are you sure you want to leave the gallery?")) {
@@ -62,8 +63,10 @@ const Room = () => {
   };
 
   const startGameHandler = () => {
-
+    startGame()
   }
+
+  const currentWord = gameState?.currentWord || ""
   const isAdmin =
     username &&
     usersData?.admin &&
