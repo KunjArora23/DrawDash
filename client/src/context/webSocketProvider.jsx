@@ -1,0 +1,186 @@
+/* eslint-disable react-refresh/only-export-components */
+import { createContext, useContext, useRef, useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+
+
+// 1️⃣ Create context
+const WebSocketContext = createContext(null);
+
+// 2️⃣ Provider
+export const WebSocketProvider = ({ children }) => {
+
+    // using refs as rerender hone pr useState ki values change ho jati h or vo hme ni chahiye websockets me
+
+    const socketRef = useRef(null)
+    const usernameRef = useRef(null)
+
+
+    const navigate = useNavigate()
+    const [roomId, setRoomId] = useState(null)
+    const [username, setUsername] = useState("")
+
+    const [users, setUsers] = useState([])
+    const [messages, setMessages] = useState([]);
+    const [usersData, setUsersData] = useState({})
+
+
+    const drawListeners = new Set();
+
+    const registerDrawListeners = (fn) => {
+        drawListeners.add(fn)
+    }
+    const unRegisterDrawListeners = (fn) => {
+        drawListeners.delete(fn)
+    }
+
+    const connect = (roomId, username) => {
+        // if any ws connection is already there then do not create new and return
+        if (socketRef.current) return
+        console.log("username in context:", username)
+        usernameRef.current = username
+
+        // storing in localstorage taki  refresh hone pr bhi username or roomId rhe or auto reconnect kr ske hm 
+        localStorage.setItem("username", username)
+        localStorage.setItem("roomId", roomId)
+
+
+        const ws = new WebSocket(`ws://localhost:8000/api/v1/ws/${roomId}/${username}`);
+
+        // ws.onopen = () => {
+        //     ws.send(
+        //         JSON.stringify({
+        //             type: 'join',
+        //             roomId,
+        //             username
+        //         })
+        //     )
+        // }
+
+
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data)
+
+            // console.log("DATA RECEIVED FROM WEBSOCKET:", data)
+
+            if (data.type == 'users') {
+                setUsers(data.users)
+            }
+            if (data.type == "users_data") {
+                setUsersData(data)
+                // console.log("room data", data)
+            }
+            if (data.type === "group") {
+                setMessages((prev) => [...prev, `${data.from}: ${data.message}`])
+                console.log(messages)
+            }
+
+            if (data.type === "draw") {
+                drawListeners.forEach((fn) => fn(data))
+            }
+
+        }
+        ws.onclose = () => {
+            socketRef.current = null
+            setUsers([])
+            setMessages([])
+        }
+
+        socketRef.current = ws
+
+        setRoomId(roomId)
+        setUsername(username)
+
+    }
+
+    const disconnect = () => {
+        if (socketRef.current) {
+            socketRef.current.close()
+            socketRef.current = null
+        }
+    }
+
+    const leaveRoom = () => {
+        disconnect(roomId, username);
+        setRoomId(null);
+        setUsername("");
+        setMessages([])
+        setUsers([])
+        localStorage.removeItem("username");
+        localStorage.removeItem("roomId")
+        navigate("/create");
+    }
+
+
+
+    const sendChat = (message) => {
+        if (!socketRef.current) return
+
+        socketRef.current.send(
+            JSON.stringify({
+                type: "group",
+                from: usernameRef.current,
+                roomId,
+                message
+            })
+        )
+
+
+    }
+
+    const sendCanvasData = (payload) => {
+        if (!socketRef.current) return
+
+        socketRef.current.send(JSON.stringify(payload))
+    }
+
+    useEffect(() => {
+        const savedUsername = localStorage.getItem("username")
+        const savedRoomId = localStorage.getItem("roomId")
+
+
+        // if (savedUsername && savedRoomId) {
+        //     console.log("Auto reconnecting with:", savedUsername, savedRoomId)
+        //     const res =  connect(savedRoomId, savedUsername)
+        //     console.log(res)
+        //     // if (res.success) {
+        //     //     navigate("/room/savedRoomId")
+        //     // }
+        // }
+
+
+    }, []);
+
+    const value = {
+
+        connect,
+        disconnect,
+        sendChat,
+        roomId,
+        users,
+        messages,
+        username,
+        setUsername,
+        leaveRoom,
+        setMessages,
+        sendCanvasData,
+        registerDrawListeners,
+        unRegisterDrawListeners,
+        usersData,
+        setUsersData
+
+
+    };
+
+
+
+    return (
+        <WebSocketContext.Provider value={value}>
+            {children}
+        </WebSocketContext.Provider>
+    );
+};
+
+// 3️⃣ Hook
+export const useWebSocket = () => {
+    return useContext(WebSocketContext);
+};
