@@ -25,9 +25,13 @@ export const WebSocketProvider = ({ children }) => {
     const [gameState, setGameState] = useState({
         status: "waiting",
         round: 1,
+        maxRounds: 5,
         drawer: "",
         currentWord: "",
         isDrawer: false,
+        timeLeft: 15,
+        scores: {},
+        endedAt: null,
     })
 
 
@@ -74,6 +78,10 @@ export const WebSocketProvider = ({ children }) => {
             }
             if (data.type == "users_data") {
                 setUsersData(data)
+                setGameState((prev) => ({
+                    ...prev,
+                    scores: data.scores ?? prev.scores,
+                }))
                 // console.log("room data", data)
             }
             if (data.type === "group") {
@@ -82,21 +90,49 @@ export const WebSocketProvider = ({ children }) => {
             }
 
             if (data.type === "game_state") {
-                setGameState({
+                setGameState((prev) => ({
+                    ...prev,
                     status: data.status ?? "waiting",
                     round: data.round ?? 1,
+                    maxRounds: data.max_rounds ?? prev.maxRounds ?? 5,
                     drawer: data.drawer ?? "",
                     currentWord: data.word ?? "",
                     isDrawer: Boolean(data.is_drawer),
-                })
+                    timeLeft: data.time_left ?? prev.timeLeft ?? 15,
+                    scores: data.scores ?? prev.scores,
+                }))
+            }
 
-                setMessages((prev) => [
+            if (data.type === "timer") {
+                setGameState((prev) => ({
                     ...prev,
-                    `Round ${data.round}: ${data.drawer} is drawing now.`,
-                ])
+                    timeLeft: data.time_left ?? prev.timeLeft,
+                }))
+            }
+
+            if (data.type === "scores") {
+                setGameState((prev) => ({
+                    ...prev,
+                    scores: data.scores ?? prev.scores,
+                }))
+            }
+
+            if (data.type === "game_over") {
+                setGameState((prev) => ({
+                    ...prev,
+                    status: "ended",
+                    currentWord: "",
+                    timeLeft: 0,
+                    scores: data.scores ?? prev.scores,
+                    endedAt: Date.now(),
+                }))
             }
 
             if (data.type === "game_error") {
+                setMessages((prev) => [...prev, `System: ${data.message}`])
+            }
+
+            if (data.type === "error") {
                 setMessages((prev) => [...prev, `System: ${data.message}`])
             }
 
@@ -112,9 +148,13 @@ export const WebSocketProvider = ({ children }) => {
             setGameState({
                 status: "waiting",
                 round: 1,
+                maxRounds: 5,
                 drawer: "",
                 currentWord: "",
                 isDrawer: false,
+                timeLeft: 15,
+                scores: {},
+                endedAt: null,
             })
         }
 
@@ -140,6 +180,17 @@ export const WebSocketProvider = ({ children }) => {
         setUsers([])
         localStorage.removeItem("username");
         localStorage.removeItem("roomId")
+        setGameState({
+            status: "waiting",
+            round: 1,
+            maxRounds: 5,
+            drawer: "",
+            currentWord: "",
+            isDrawer: false,
+            timeLeft: 15,
+            scores: {},
+            endedAt: null,
+        })
         navigate("/create");
     }
 

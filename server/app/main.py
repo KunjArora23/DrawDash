@@ -7,10 +7,104 @@ from app.models.CreateRoomModel import CreateRoomRequest
 
 
 import json
+import asyncio
 
 
 def mask_word(word: str) -> str:
     return " ".join("_" for _ in word)
+
+
+ROUND_DURATION_SECONDS = 15
+room_timer_tasks: dict[str, asyncio.Task] = {}
+
+
+async def cancel_room_timer(room_id: str):
+    existing_task = room_timer_tasks.get(room_id)
+    if existing_task and not existing_task.done():
+        existing_task.cancel()
+    room_timer_tasks.pop(room_id, None)
+
+
+async def broadcast_turn_state(room_id: str, turn_result: dict):
+    drawer = turn_result["drawer"]
+    actual_word = turn_result["word"]
+    hidden_word = mask_word(actual_word)
+
+    await connection_manager.broadcast(
+        room_id,
+        {
+            "type": "game_state",
+            "status": "playing",
+            "round": turn_result["round"],
+            "max_rounds": turn_result["max_rounds"],
+            "drawer": drawer,
+            "word": hidden_word,
+            "is_drawer": False,
+            "time_left": ROUND_DURATION_SECONDS,
+            "scores": turn_result.get("scores", {}),
+        },
+    )
+
+    await connection_manager.send_to_username(
+        room_id,
+        drawer,
+        {
+            "type": "game_state",
+            "status": "playing",
+            "round": turn_result["round"],
+            "max_rounds": turn_result["max_rounds"],
+            "drawer": drawer,
+            "word": actual_word,
+            "is_drawer": True,
+            "time_left": ROUND_DURATION_SECONDS,
+            "scores": turn_result.get("scores", {}),
+        },
+    )
+
+
+async def advance_turn(room_id: str):
+    turn_result = game_manager.move_to_next_drawer(room_id)
+    if not turn_result["success"]:
+        await connection_manager.broadcast(
+            room_id,
+            {
+                "type": "game_error",
+                "message": turn_result.get("message", "Could not advance turn"),
+            },
+        )
+        return
+
+    if turn_result.get("game_over"):
+        await connection_manager.broadcast(
+            room_id,
+            {
+                "type": "game_over",
+                "scores": turn_result.get("scores", {}),
+            },
+        )
+        await cancel_room_timer(room_id)
+        return
+
+    await broadcast_turn_state(room_id, turn_result)
+    room_timer_tasks[room_id] = asyncio.create_task(run_round_timer(room_id))
+
+
+async def run_round_timer(room_id: str):
+    try:
+        for remaining in range(ROUND_DURATION_SECONDS, -1, -1):
+            await connection_manager.broadcast(
+                room_id,
+                {
+                    "type": "timer",
+                    "time_left": remaining,
+                },
+            )
+            await asyncio.sleep(1)
+
+        room_timer_tasks.pop(room_id, None)
+        await advance_turn(room_id)
+    except asyncio.CancelledError:
+        return
 
 
 app = FastAPI()
@@ -77,6 +171,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, username: str):
             "type": "users_data",
             "users": list(room["users"]),
             "admin": room["admin"],
+            "scores": game_manager.games.get(room_id, {}).get("scores", {}),
         },
     )
 
@@ -86,17 +181,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, username: str):
             payload = json.loads(data)
             msg_type = payload.get("type")
 
-            if msg_type == "group":
-                await connection_manager.broadcast(
-                    room_id,
-                    {
-                        "type": "group",
-                        "from": payload["from"],
-                        "message": payload["message"],
-                    },
-                )
-
-            elif msg_type == "draw":
+            if msg_type == "draw":
                 await connection_manager.broadcast(room_id, payload)
 
             elif msg_type == "start_game":
@@ -137,7 +222,9 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, username: str):
                 for player in game["players"]:
                     game["scores"].setdefault(player, 0)
 
-                start_result = game_manager.start_game(room_id=room_id, requester=username)
+                start_result = game_manager.start_game(
+                    room_id=room_id, requester=username
+                )
 
                 if not start_result["success"]:
                     await connection_manager.send_to_username(
@@ -150,37 +237,67 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, username: str):
                     )
                     continue
 
-                current_round = game_manager.games[room_id]["round"]
-                drawer = start_result["drawer"]
-                actual_word = start_result["word"]
-                hidden_word = mask_word(actual_word)
+                if start_result.get("game_over"):
+                    await connection_manager.broadcast(
+                        room_id,
+                        {
+                            "type": "game_over",
+                            "scores": start_result.get("scores", {}),
+                        },
+                    )
+                    await cancel_room_timer(room_id)
+                    continue
+
+                await broadcast_turn_state(room_id, start_result)
+                await cancel_room_timer(room_id)
+                room_timer_tasks[room_id] = asyncio.create_task(
+                    run_round_timer(room_id)
+                )
+
+            elif msg_type == "group":
+                game = game_manager.games.get(room_id)
+                guesser = payload.get("from")
+                message_text = payload.get("message", "")
+
+                if game and game.get("status") == "playing":
+                    current_drawer = game_manager.get_current_drawer(room_id)
+                    if current_drawer and guesser != current_drawer:
+                        guess_result = game_manager.is_guess_correct(
+                            room_id=room_id,
+                            guessed_word=message_text,
+                            guesser=guesser,
+                        )
+
+                        if guess_result.get("correct"):
+                            await connection_manager.broadcast(
+                                room_id,
+                                {
+                                    "type": "group",
+                                    "from": "System",
+                                    "message": f"{guesser} guessed the word correctly!",
+                                },
+                            )
+
+                            await connection_manager.broadcast(
+                                room_id,
+                                {
+                                    "type": "scores",
+                                    "scores": game.get("scores", {}),
+                                },
+                            )
+
+                            await cancel_room_timer(room_id)
+                            await advance_turn(room_id)
+                            continue
 
                 await connection_manager.broadcast(
                     room_id,
                     {
-                        "type": "game_state",
-                        "status": "playing",
-                        "round": current_round,
-                        "drawer": drawer,
-                        "word": hidden_word,
-                        "is_drawer": False,
+                        "type": "group",
+                        "from": payload["from"],
+                        "message": payload["message"],
                     },
                 )
-
-                await connection_manager.send_to_username(
-                    room_id,
-                    drawer,
-                    {
-                        "type": "game_state",
-                        "status": "playing",
-                        "round": current_round,
-                        "drawer": drawer,
-                        "word": actual_word,
-                        "is_drawer": True,
-                    },
-                )
-            
-                           
 
     except WebSocketDisconnect:
         await connection_manager.disconnect(room_id, username)
@@ -196,5 +313,9 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, username: str):
                     "type": "users_data",
                     "users": list(room["users"]),
                     "admin": room["admin"],
+                    "scores": game_manager.games.get(room_id, {}).get("scores", {}),
                 },
             )
+        else:
+            await cancel_room_timer(room_id)
+            game_manager.clear_game(room_id)

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useWebSocket } from "../context/webSocketProvider";
 
@@ -12,19 +12,9 @@ import CanvasToolbar from "../components/Canvas/CanvasToolbar";
 
 
 const Room = () => {
-  const { roomId } = useParams();
-  const navigate = useNavigate();
-  const [currentMessage, setCurrentMessage] = useState("");
-
-  const [showUsers, setShowUsers] = useState(false);
-  const [showChat, setShowChat] = useState(false);
-  const timer = 60
-
-
 
   const {
     username,
-    users,
     connect,
     leaveRoom,
     messages,
@@ -33,6 +23,18 @@ const Room = () => {
     startGame,
     gameState
   } = useWebSocket();
+  const { roomId } = useParams();
+  const navigate = useNavigate();
+  const [currentMessage, setCurrentMessage] = useState("");
+
+  const [showUsers, setShowUsers] = useState(false);
+  const [showChat, setShowChat] = useState(false);
+  const [dismissedGameOverAt, setDismissedGameOverAt] = useState(null);
+  const timer = gameState?.timeLeft ?? 15
+
+
+
+
 
 
   console.log("Room data in room.jsx", usersData)
@@ -67,6 +69,23 @@ const Room = () => {
   }
 
   const currentWord = gameState?.currentWord || ""
+  const currentDrawer = gameState?.drawer || "";
+  const isDrawer = Boolean(gameState?.isDrawer);
+  const gameStatus = gameState?.status || "waiting";
+  const gameOverEventId = gameState?.endedAt ?? null;
+  const showWinnerPopup = gameState?.status === "ended" && gameOverEventId !== dismissedGameOverAt;
+  const scores = gameState?.scores ?? {};
+  const scoreEntries = Object.entries(scores);
+  const topScore = scoreEntries.length ? Math.max(...scoreEntries.map(([, score]) => score)) : 0;
+  const winners = scoreEntries
+    .filter(([, score]) => score === topScore)
+    .map(([player]) => player);
+  const winnerMessage =
+    !scoreEntries.length
+      ? "No winner this time"
+      : winners.length === 1
+        ? `${winners[0]} won with ${topScore} points!`
+        : `Tie between ${winners.join(", ")} with ${topScore} points!`;
   const isAdmin =
     username &&
     usersData?.admin &&
@@ -82,7 +101,13 @@ const Room = () => {
           onToggleUsers={() => setShowUsers(true)}
           onToggleChat={() => setShowChat(true)}
           timer={timer}
+          currentRound={gameState?.round ?? 1}
+          totalRounds={gameState?.maxRounds ?? 5}
           currentWord={currentWord}
+          currentDrawer={currentDrawer}
+          isDrawer={isDrawer}
+          username={username}
+          gameStatus={gameStatus}
           isAdmin={isAdmin}
           onStartGame={startGameHandler}
         />
@@ -98,7 +123,13 @@ const Room = () => {
               <h3 className="text-xs font-black uppercase tracking-[0.2em] text-indigo-500">Artists</h3>
             </div>
             <div className="flex-1 overflow-y-auto custom-scrollbar">
-              <UsersSidebar usersData={usersData} />
+              <UsersSidebar
+                usersData={usersData}
+                scores={gameState?.scores ?? {}}
+                currentDrawer={currentDrawer}
+                currentUsername={username}
+                gameStatus={gameStatus}
+              />
             </div>
           </div>
         </div>
@@ -145,7 +176,13 @@ const Room = () => {
                 <span className="font-bold text-slate-400">Scores</span>
                 <button onClick={() => setShowUsers(false)} className="text-slate-300 hover:text-slate-900">✕</button>
               </div>
-              <UsersSidebar users={users} />
+              <UsersSidebar
+                usersData={usersData}
+                scores={gameState?.scores ?? {}}
+                currentDrawer={currentDrawer}
+                currentUsername={username}
+                gameStatus={gameStatus}
+              />
             </div>
           </div>
         )}
@@ -169,6 +206,38 @@ const Room = () => {
                   />
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {showWinnerPopup && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+            <div className="w-full max-w-md rounded-3xl bg-white border border-slate-100 shadow-2xl p-6 text-center">
+              <p className="text-xs font-black uppercase tracking-[0.2em] text-emerald-600">Game Over</p>
+              <h2 className="mt-2 text-2xl font-black text-slate-800">Congratulations</h2>
+              <p className="mt-3 text-slate-600 font-semibold">{winnerMessage}</p>
+
+              <div className="mt-5 max-h-40 overflow-y-auto rounded-2xl border border-slate-100 bg-slate-50 p-3 text-left">
+                {scoreEntries.length === 0 ? (
+                  <p className="text-sm text-slate-500">No scores available.</p>
+                ) : (
+                  scoreEntries
+                    .sort((a, b) => b[1] - a[1])
+                    .map(([player, score]) => (
+                      <div key={player} className="flex items-center justify-between py-1 text-sm font-bold text-slate-700">
+                        <span>{player}</span>
+                        <span>{score}</span>
+                      </div>
+                    ))
+                )}
+              </div>
+
+              <button
+                onClick={() => setDismissedGameOverAt(gameOverEventId)}
+                className="mt-6 w-full rounded-2xl bg-indigo-600 py-3 text-sm font-black uppercase tracking-wider text-white hover:bg-indigo-700 transition-all"
+              >
+                Close
+              </button>
             </div>
           </div>
         )}

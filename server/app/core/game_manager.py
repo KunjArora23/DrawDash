@@ -8,6 +8,33 @@ class GameManager:
         # room_id -> game data
         self.games: Dict[str, Dict] = {}
 
+    def _prepare_turn(self, game: Dict) -> Dict:
+        word = self._pick_random_word(game["used_words"])
+        if not word:
+            game["status"] = "ended"
+            return {
+                "success": True,
+                "game_over": True,
+                "scores": game["scores"],
+            }
+
+        game["status"] = "playing"
+        game["current_word"] = word
+        game["used_words"].add(word)
+        game["round_started_at"] = time()
+
+        drawer = game["players"][game["drawing_idx"]]
+
+        return {
+            "success": True,
+            "game_over": False,
+            "drawer": drawer,
+            "word": word,
+            "round": game["round"],
+            "max_rounds": game["max_rounds"],
+            "scores": game["scores"],
+        }
+
     def create_game(self, room_id: str, players: List[str], owner: str) -> Dict:
         if room_id in self.games:
             return {"success": False, "message": "Game already exists"}
@@ -57,29 +84,18 @@ class GameManager:
         if requester != game["admin"]:
             return {"success": False, "message": "Only admin can start game"}
 
-        word = self._pick_random_word(game["used_words"])
-        if not word:
-            return {"success": False, "message": "No words left"}
-
-        game["status"] = "playing"
-        game["current_word"] = word
-        game["used_words"].add(word)
-        game["round_started_at"] = time()
-
-        drawer = game["players"][game["drawing_idx"]]
-
-        return {
-            "success": True,
-            "drawer": drawer,
-            "word": word,  # send ONLY to drawer 
-        }
+        return self._prepare_turn(game)
 
     def is_guess_correct(self, room_id: str, guessed_word: str, guesser: str) -> Dict:
         game = self.games.get(room_id)
         if not game:
             return {"success": False, "message": "Game not found"}
 
-        if guessed_word.lower() == game["current_word"]:
+        if not game["current_word"]:
+            return {"success": True, "correct": False}
+
+        if guessed_word.strip().lower() == game["current_word"].strip().lower():
+            game["scores"].setdefault(guesser, 0)
             game["scores"][guesser] += 10
             return {"success": True, "correct": True}
 
@@ -94,15 +110,19 @@ class GameManager:
 
         if game["drawing_idx"] >= len(game["players"]):
             game["drawing_idx"] = 0
-            return self.next_round(room_id)
+            next_round_result = self.next_round(room_id)
+            if not next_round_result["success"]:
+                return next_round_result
 
-        return {
-            "success": True,
-            "new_drawer": game["players"][game["drawing_idx"]],
-        }
+            if next_round_result.get("game_over"):
+                return next_round_result
+
+        return self._prepare_turn(game)
 
     def next_round(self, room_id: str) -> Dict:
-        game = self.games[room_id]
+        game = self.games.get(room_id)
+        if not game:
+            return {"success": False, "message": "Game not found"}
 
         if game["round"] >= game["max_rounds"]:
             game["status"] = "ended"
@@ -114,3 +134,12 @@ class GameManager:
 
         game["round"] += 1
         return {"success": True, "round": game["round"]}
+
+    def get_current_drawer(self, room_id: str) -> str | None:
+        game = self.games.get(room_id)
+        if not game or not game["players"]:
+            return None
+        return game["players"][game["drawing_idx"]]
+
+    def clear_game(self, room_id: str):
+        self.games.pop(room_id, None)

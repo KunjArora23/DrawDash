@@ -4,10 +4,29 @@ const TopBar = ({
   onToggleUsers, 
   onToggleChat, 
   timer, 
+  currentRound,
+  totalRounds,
+  currentDrawer,
+  isDrawer,
+  username,
+  gameStatus,
   currentWord, 
   isAdmin,      // New prop to check if user is admin
   onStartGame   // New function prop to trigger backend start logic
 }) => {
+
+  const drawerName = currentDrawer || "-";
+  const roleText =
+    gameStatus !== "playing"
+      ? "Waiting"
+      : isDrawer
+        ? "You are Drawing"
+        : "You are Guessing";
+
+  const displayName =
+    username && currentDrawer && username.toLowerCase() === currentDrawer.toLowerCase()
+      ? "You"
+      : drawerName;
 
   
   return (
@@ -28,6 +47,19 @@ const TopBar = ({
           <div className="bg-slate-900 text-white px-4 py-1.5 rounded-2xl font-mono font-bold text-lg shadow-xl shadow-slate-200 flex items-center gap-2">
             <span className="w-2 h-2 bg-rose-500 rounded-full animate-pulse"></span>
             {timer ?? "00"}s
+          </div>
+
+          {/* Round Display */}
+          <div className="bg-emerald-50 text-emerald-700 px-4 py-1.5 rounded-2xl text-sm font-black uppercase tracking-wider border border-emerald-100">
+            Round {currentRound ?? 1}/{totalRounds ?? 5}
+          </div>
+
+          <div className="bg-amber-50 text-amber-700 px-4 py-1.5 rounded-2xl text-sm font-black uppercase tracking-wider border border-amber-100">
+            Drawing: <span className="text-amber-900">{displayName}</span>
+          </div>
+
+          <div className="bg-sky-50 text-sky-700 px-4 py-1.5 rounded-2xl text-sm font-black uppercase tracking-wider border border-sky-100">
+            {roleText}
           </div>
 
           {/* Word Display */}
