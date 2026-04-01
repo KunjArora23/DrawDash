@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useCanvasContext } from "../../context/canvasContext";
+import { useWebSocket } from "../../context/webSocketProvider";
 
 const CanvasToolbar = () => {
     const {
@@ -12,6 +13,9 @@ const CanvasToolbar = () => {
         clearCanvas
     } = useCanvasContext()
 
+    const { gameState } = useWebSocket()
+    const isDrawer = gameState?.isDrawer ?? false
+
     
 
     useEffect(() => {
@@ -22,13 +26,16 @@ const CanvasToolbar = () => {
 
     return (
         <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-40">
-            <div className="flex items-center gap-3 bg-slate-900/90 backdrop-blur-xl border border-white/10 rounded-[2rem] shadow-2xl px-6 py-3">
+            <div className={`flex items-center gap-3 bg-slate-900/90 backdrop-blur-xl border border-white/10 rounded-[2rem] shadow-2xl px-6 py-3 transition-all ${
+                !isDrawer ? 'opacity-50 pointer-events-none' : ''
+            }`}>
 
                 {/* Pen */}
                 <button
                     className={`h-11 w-11 flex items-center justify-center rounded-xl transition-all ${tool === "pen" ? "bg-white text-2xl shadow-lg scale-110" : "text-white hover:bg-white/10 text-xl"}`}
-                    title="Pen"
-                    onClick={() => setTool("pen")}
+                    title={isDrawer ? "Pen" : "Only the drawer can use tools"}
+                    onClick={() => isDrawer && setTool("pen")}
+                    disabled={!isDrawer}
                 >
                     ✏️
                 </button>
@@ -36,8 +43,9 @@ const CanvasToolbar = () => {
                 {/* Eraser */}
                 <button
                     className={`h-11 w-11 flex items-center justify-center rounded-xl transition-all ${tool === "eraser" ? "bg-white text-2xl shadow-lg scale-110" : "text-white hover:bg-white/10 text-xl"}`}
-                    title="Eraser"
-                    onClick={() => setTool("eraser")}
+                    title={isDrawer ? "Eraser" : "Only the drawer can use tools"}
+                    onClick={() => isDrawer && setTool("eraser")}
+                    disabled={!isDrawer}
                 >
                     🧽
                 </button>
@@ -52,8 +60,9 @@ const CanvasToolbar = () => {
                         max="12"
                         value={strokeWidth}
                         className="w-24 accent-indigo-500 cursor-pointer"
-                        title="Brush Size"
-                        onChange={(e) => setStrokeWidth(Number(e.target.value))}
+                        title={isDrawer ? "Brush Size" : "Only the drawer can use tools"}
+                        onChange={(e) => isDrawer && setStrokeWidth(Number(e.target.value))}
+                        disabled={!isDrawer}
                     />
                     <span className="text-[10px] font-black text-white/40 uppercase tracking-widest">Size: {strokeWidth}</span>
                 </div>
@@ -67,8 +76,9 @@ const CanvasToolbar = () => {
                             key={c}
                             className={`h-6 w-6 rounded-full border-2 transition-all hover:scale-125 ${color === c ? "border-white ring-2 ring-white/20" : "border-transparent"}`}
                             style={{ backgroundColor: c }}
-                            title={c}
-                            onClick={() => setColor(c)}
+                            title={isDrawer ? c : "Only the drawer can use tools"}
+                            onClick={() => isDrawer && setColor(c)}
+                            disabled={!isDrawer}
                         />
                     ))}
                 </div>
@@ -77,9 +87,10 @@ const CanvasToolbar = () => {
 
                 {/* Clear */}
                 <button
-                    className="h-10 px-4 rounded-xl border border-rose-500/30 text-rose-400 text-xs font-black uppercase tracking-widest hover:bg-rose-500 hover:text-white transition-all active:scale-95"
-                    title="Clear Board"
-                    onClick={clearCanvas}
+                    className="h-10 px-4 rounded-xl border border-rose-500/30 text-rose-400 text-xs font-black uppercase tracking-widest hover:bg-rose-500 hover:text-white transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title={isDrawer ? "Clear Board" : "Only the drawer can clear"}
+                    onClick={() => isDrawer && clearCanvas()}
+                    disabled={!isDrawer}
                 >
                     Clear
                 </button>

@@ -13,7 +13,7 @@ const CanvasBoard = () => {
     const strokeRef = useRef(2)
 
     const { roomId } = useParams()
-    const { username, sendCanvasData, registerDrawListeners, unRegisterDrawListeners } = useWebSocket()
+    const { username, sendCanvasData, registerDrawListeners, unRegisterDrawListeners, gameState } = useWebSocket()
     const { tool, color, strokeWidth, clearTrigger } = useCanvasContext()
 
     // ye isliye kra bcoz state value update hone pr actual canva pr kuch reflect ni ho rha tha as draw wale functions ko ni pta ki state value updates hui
@@ -27,6 +27,12 @@ const CanvasBoard = () => {
     // 🔹 Drawing start (mousedown)
     //   ye vo funtions hai jo local drawing ke funtions ko call krenge or server pr data bhejne wale functins ko call krenge
     const startDraw = (e) => {
+        // Only allow drawing if current user is the drawer
+        if (!gameState?.isDrawer) {
+            console.log("Only the drawer can draw!")
+            return
+        }
+
         // console.log("draw wala colo", color)
 
         startDrawOnCanvas(e.nativeEvent.offsetX, e.nativeEvent.offsetY)
@@ -36,6 +42,11 @@ const CanvasBoard = () => {
 
     // 🔹 Drawing move (mousemove)
     const draw = (e) => {
+        // Only allow drawing if current user is the drawer
+        if (!gameState?.isDrawer) {
+            return
+        }
+
         drawingOnCanvas(e.nativeEvent.offsetX, e.nativeEvent.offsetY)
         sendDrawingEvent(e.nativeEvent.offsetX, e.nativeEvent.offsetY)
     };
@@ -43,12 +54,23 @@ const CanvasBoard = () => {
     // 🔹 Drawing stop (mouseup / leave)
 
     const stopDraw = () => {
+        // Only allow if current user is the drawer
+        if (!gameState?.isDrawer) {
+            return
+        }
+
         stopDrawOnCanvas()
         // console.log("draeing stop")
         sendEndEvent()
     };
 
     const clearBoard = () => {
+        // Only allow clearing if current user is the drawer
+        if (!gameState?.isDrawer) {
+            console.log("Only the drawer can clear the canvas!")
+            return
+        }
+
         clearCanvas()
         sendClearEvent()
     }
@@ -245,10 +267,15 @@ const CanvasBoard = () => {
             onMouseMove={draw}
             onMouseUp={stopDraw}
             onMouseLeave={stopDraw}
-            className="w-full h-full cursor-crosshair bg-white touch-none transition-all duration-300"
+            className={`w-full h-full bg-white touch-none transition-all duration-300 ${
+                gameState?.isDrawer 
+                    ? 'cursor-crosshair' 
+                    : 'cursor-not-allowed opacity-75'
+            }`}
             style={{
                 backgroundImage: 'radial-gradient(#e2e8f0 1px, transparent 1px)',
-                backgroundSize: '32px 32px'
+                backgroundSize: '32px 32px',
+                pointerEvents: gameState?.isDrawer ? 'auto' : 'none'
             }}
         />
     );
